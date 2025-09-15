@@ -1,0 +1,31 @@
+# Core dependencies for SpecECD implementation
+torch>=2.0.0+cu121
+torchaudio>=2.0.0+cu121
+torchvision>=0.15.0+cu121
+transformers>=4.30.0
+accelerate>=0.20.0
+tokenizers>=0.13.0
+
+# Networking and communication
+fastapi>=0.100.0
+uvicorn>=0.20.0
+websockets>=11.0
+httpx>=0.24.0
+pydantic>=2.0.0
+toml>=0.10.2
+
+# Performance and monitoring
+psutil>=5.9.0
+nvidia-ml-py3>=7.352.0
+
+# Testing and evaluation
+pytest>=7.0.0
+datasets>=2.12.0
+evaluate>=0.4.0
+
+# Utilities
+tqdm>=4.65.0
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0

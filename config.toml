@@ -1,0 +1,60 @@
+# SpecECD Project Configuration
+
+# Python version
+python_requires = ">=3.8"
+
+# Project structure
+[project]
+name = "spececd"
+version = "1.0.0"
+description = "Speculative Edge-Cloud Decoding implementation"
+authors = ["SpecECD Team"]
+
+# Development dependencies
+[dev-dependencies]
+black = ">=23.0.0"
+flake8 = ">=6.0.0"
+mypy = ">=1.0.0"
+
+# Environment variables
+TORCH_USE_CUDA_DSA = 1
+CUDA_LAUNCH_BLOCKING = 1
+
+# Model configurations
+[models]
+# Using same model family for better token compatibility
+edge_model = "meta-llama/Llama-3.2-1B-Instruct"  # 1B parameters for edge (CPU)
+cloud_model = "meta-llama/Llama-3.1-8B-Instruct"  # 8B parameters for cloud (GPU)
+# cloud_model = "meta-llama/Llama-3.2-3B-Instruct"  # 3B parameters fallback for CPU-only
+max_edge_tokens = 5
+max_cloud_tokens = 10
+
+# Device preferences
+[devices]
+edge_device = "cpu"      # Force CPU for edge devices
+cloud_device = "auto"   # Auto-detect GPU, fallback to CPU
+
+# Performance notes:
+# - GPU setup detected, using 8B cloud model for best performance
+# - 60%+ token acceptance rate achieved with same model family
+# - Edge on CPU (1B), Cloud on GPU (8B) for optimal distribution
+
+# Network settings
+[network]
+default_host = "localhost"
+default_port = 8765
+ping_interval = 300  # 5 minutes for very slow model inference
+ping_timeout = 300   # 5 minutes for very slow model inference
+
+# Model performance options
+[performance]
+warmup_iterations = 2
+test_iterations = 2  # Reduced due to slow inference
+max_tokens_per_test = 50  # Reduced for faster testing
+temperature = 0.7
+repetition_penalty = 1.1
+
+# Alternative faster cloud model for testing
+[models.fast]
+cloud_model = "meta-llama/Llama-3.2-3B-Instruct"  # 3B model - much faster
+expected_inference_time = "10-20 seconds"

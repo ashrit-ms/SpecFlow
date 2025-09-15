@@ -1,0 +1,3 @@
+"""
+Initialize edge module
+"""

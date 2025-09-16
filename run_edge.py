@@ -1,9 +1,11 @@
 """
 Main entry point for running edge client
 Run this on the edge machine (laptop)
+Supports CPU and OpenVINO NPU acceleration
 """
 import asyncio
 import sys
+import argparse
 import logging
 from edge.client import EdgeClient
 
@@ -14,21 +16,53 @@ logging.basicConfig(
 )
 g_logger = logging.getLogger(__name__)
 
+def ParseArguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='SpecECD Edge Client')
+    parser.add_argument('--host', default='localhost', 
+                       help='Cloud server host (default: localhost)')
+    parser.add_argument('--port', type=int, default=8765,
+                       help='Cloud server port (default: 8765)')
+    parser.add_argument('--device', choices=['cpu', 'npu'], default=None,
+                       help='Edge device type: cpu or npu (default: from config)')
+    parser.add_argument('--list-devices', action='store_true',
+                       help='List available devices and exit')
+    
+    return parser.parse_args()
+
+def ListAvailableDevices():
+    """List available devices for edge inference"""
+    print("Available edge devices:")
+    print("  cpu - PyTorch CPU inference (always available)")
+    
+    # Check NPU availability
+    try:
+        from edge.openvino_model import IsNPUAvailable
+        if IsNPUAvailable():
+            print("  npu - OpenVINO NPU acceleration (available)")
+        else:
+            print("  npu - OpenVINO NPU acceleration (not available)")
+    except ImportError:
+        print("  npu - OpenVINO NPU acceleration (not installed)")
+        print("        Install with: pip install openvino openvino-dev optimum[openvino]")
+
 async def RunEdgeClient():
     """Main function to run edge client"""
-    # Parse command line arguments
-    cloud_host = "localhost"  # Change to desktop IP address
-    cloud_port = 8765
+    args = ParseArguments()
     
-    if len(sys.argv) > 1:
-        cloud_host = sys.argv[1]
-    if len(sys.argv) > 2:
-        cloud_port = int(sys.argv[2])
+    # List devices if requested
+    if args.list_devices:
+        ListAvailableDevices()
+        return
     
-    g_logger.info(f"Starting edge client, connecting to {cloud_host}:{cloud_port}")
+    g_logger.info(f"Starting edge client, connecting to {args.host}:{args.port}")
+    if args.device:
+        g_logger.info(f"Using device: {args.device}")
+    else:
+        g_logger.info("Using device from configuration")
     
     # Create and initialize edge client
-    edge_client = EdgeClient(cloud_host, cloud_port)
+    edge_client = EdgeClient(args.host, args.port, args.device)
     
     if not await edge_client.Initialize():
         g_logger.error("Failed to initialize edge client")
@@ -80,8 +114,15 @@ async def RunEdgeClient():
 
 if __name__ == "__main__":
     print("SpecECD Edge Client")
-    print("Usage: python run_edge.py [cloud_host] [cloud_port]")
-    print(f"Default: python run_edge.py localhost 8765")
+    print("Usage:")
+    print("  python run_edge.py [--host HOST] [--port PORT] [--device {cpu,npu}]")
+    print("  python run_edge.py --list-devices")
+    print("")
+    print("Examples:")
+    print("  python run_edge.py                     # Use default settings")
+    print("  python run_edge.py --device npu        # Force NPU acceleration")
+    print("  python run_edge.py --device cpu        # Force CPU inference")
+    print("  python run_edge.py --host 192.168.1.100 --port 8765  # Remote cloud")
     print("")
     
     asyncio.run(RunEdgeClient())

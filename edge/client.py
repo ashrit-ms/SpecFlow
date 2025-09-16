@@ -11,6 +11,7 @@ from common.protocol import (
     SpeculativeRequest, SpeculativeResponse, PerformanceMetrics,
     SerializeMessage, DeserializeMessage, CreateTimestamp
 )
+from common.config import get_edge_model_config
 from edge.draft_model import EdgeDraftModel
 
 # Configure logging
@@ -20,12 +21,24 @@ g_logger = logging.getLogger(__name__)
 class EdgeClient:
     """Client running on edge device to communicate with cloud"""
     
-    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765):
+    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765, device: str = None):
         self.m_cloud_host = cloud_host
         self.m_cloud_port = cloud_port
-        self.m_draft_model = EdgeDraftModel()
+        
+        # Get device configuration
+        edge_config = get_edge_model_config()
+        self.m_device = device if device is not None else edge_config["device"]
+        
+        # Initialize draft model with configured device
+        self.m_draft_model = EdgeDraftModel(
+            model_name=edge_config["model_name"],
+            device=self.m_device
+        )
+        
         self.m_websocket = None
         self.m_performance_metrics = PerformanceMetrics()
+        
+        g_logger.info(f"EdgeClient initialized with device: {self.m_device}")
         
     async def Initialize(self) -> bool:
         """Initialize the edge client and load draft model"""

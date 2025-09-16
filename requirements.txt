@@ -23,6 +23,11 @@ pytest>=7.0.0
 datasets>=2.12.0
 evaluate>=0.4.0
 
+# OpenVINO NPU support
+openvino>=2023.3.0
+openvino-dev>=2023.3.0
+optimum[openvino]>=1.16.0
+
 # Utilities
 tqdm>=4.65.0
 numpy>=1.24.0

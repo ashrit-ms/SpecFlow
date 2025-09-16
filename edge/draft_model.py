@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 g_logger = logging.getLogger(__name__)
 
 class EdgeDraftModel:
-    """Draft model running on edge device with CPU or NPU support"""
+    """Draft model running on edge device with CPU, GPU, or NPU support"""
     
     def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", device: str = "cpu"):
         """
@@ -33,7 +33,7 @@ class EdgeDraftModel:
         
         Args:
             model_name: HuggingFace model name
-            device: Device to use ("cpu" or "npu")
+            device: Device to use ("cpu", "gpu", or "npu")
         """
         self.m_model_name = model_name
         self.m_device = device.lower()
@@ -41,12 +41,24 @@ class EdgeDraftModel:
         self.m_model = None
         self.m_generation_config = None
         self.m_npu_model = None
+        self.m_cuda_device = None
         
         g_logger.info(f"Initializing edge draft model: {model_name}")
         g_logger.info(f"Target device: {self.m_device}")
         
         # Validate device selection
-        if self.m_device == "npu":
+        if self.m_device == "gpu":
+            if not torch.cuda.is_available():
+                g_logger.error("GPU device requested but CUDA not available")
+                g_logger.info("Falling back to CPU device")
+                self.m_device = "cpu"
+            else:
+                # Set CUDA device
+                self.m_cuda_device = f"cuda:0"  # Default to first GPU
+                g_logger.info(f"GPU available: {torch.cuda.get_device_name(0)}")
+                g_logger.info(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        
+        elif self.m_device == "npu":
             if not OPENVINO_AVAILABLE:
                 g_logger.error("NPU device requested but OpenVINO not available")
                 g_logger.info("Install OpenVINO with: pip install openvino openvino-dev optimum[openvino]")
@@ -57,7 +69,7 @@ class EdgeDraftModel:
                 g_logger.info("Falling back to CPU device")
                 self.m_device = "cpu"
         
-        if self.m_device not in ["cpu", "npu"]:
+        if self.m_device not in ["cpu", "gpu", "npu"]:
             g_logger.warning(f"Unknown device '{device}', falling back to CPU")
             self.m_device = "cpu"
         
@@ -66,6 +78,8 @@ class EdgeDraftModel:
         try:
             if self.m_device == "npu":
                 return self._LoadNPUModel()
+            elif self.m_device == "gpu":
+                return self._LoadGPUModel()
             else:
                 return self._LoadCPUModel()
                 
@@ -88,6 +102,51 @@ class EdgeDraftModel:
         self.m_tokenizer = self.m_npu_model.m_tokenizer
         
         g_logger.info("NPU model loaded successfully")
+        return True
+    
+    def _LoadGPUModel(self) -> bool:
+        """Load model for GPU inference using PyTorch CUDA"""
+        g_logger.info("Loading model for GPU inference...")
+        
+        # Load tokenizer
+        self.m_tokenizer = AutoTokenizer.from_pretrained(
+            self.m_model_name,
+            trust_remote_code=True
+        )
+        
+        # Add padding token if not present
+        if self.m_tokenizer.pad_token is None:
+            self.m_tokenizer.pad_token = self.m_tokenizer.eos_token
+        
+        # Load model with GPU optimizations
+        g_logger.info(f"Loading model to {self.m_cuda_device}...")
+        self.m_model = AutoModelForCausalLM.from_pretrained(
+            self.m_model_name,
+            torch_dtype=torch.float16,  # Use float16 for GPU memory efficiency
+            device_map="auto",  # Automatically distribute across available GPUs
+            trust_remote_code=True,
+            low_cpu_mem_usage=True
+        ).to(self.m_cuda_device)
+        
+        # Configure generation parameters optimized for GPU
+        self.m_generation_config = GenerationConfig(
+            max_new_tokens=10,  # Generate few tokens as draft
+            temperature=0.7,
+            do_sample=True,
+            pad_token_id=self.m_tokenizer.pad_token_id,
+            eos_token_id=self.m_tokenizer.eos_token_id,
+            repetition_penalty=1.1,
+            use_cache=True  # Enable KV cache for faster generation
+        )
+        
+        # Log GPU memory usage
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated(0) / 1e9
+            cached = torch.cuda.memory_reserved(0) / 1e9
+            g_logger.info(f"GPU memory allocated: {allocated:.2f} GB")
+            g_logger.info(f"GPU memory cached: {cached:.2f} GB")
+        
+        g_logger.info("GPU model loaded successfully")
         return True
     
     def _LoadCPUModel(self) -> bool:
@@ -134,13 +193,17 @@ class EdgeDraftModel:
     ) -> Tuple[List[str], List[float], float]:
         """
         Generate draft tokens WITH their probabilities
-        Routes to appropriate backend (CPU PyTorch or NPU OpenVINO)
+        Routes to appropriate backend (CPU PyTorch, GPU PyTorch, or NPU OpenVINO)
         
         Returns:
             (draft_tokens, draft_probabilities, inference_time)
         """
         if self.m_device == "npu" and self.m_npu_model:
             return self.m_npu_model.GenerateDraftTokensWithProbabilities(
+                prompt, num_draft_tokens, temperature
+            )
+        elif self.m_device == "gpu":
+            return self._GenerateGPUTokensWithProbabilities(
                 prompt, num_draft_tokens, temperature
             )
         else:
@@ -212,6 +275,72 @@ class EdgeDraftModel:
             
         except Exception as e:
             g_logger.error(f"CPU draft generation with probabilities failed: {e}")
+            return [], [], CreateTimestamp() - start_time
+    
+    def _GenerateGPUTokensWithProbabilities(
+        self, 
+        prompt: str, 
+        num_draft_tokens: int = 5,
+        temperature: float = 0.8
+    ) -> Tuple[List[str], List[float], float]:
+        """
+        Generate draft tokens with probabilities using GPU PyTorch
+        """
+        if not self.m_model or not self.m_tokenizer:
+            g_logger.error("GPU model not loaded")
+            return [], [], 0.0
+        
+        start_time = CreateTimestamp()
+        
+        try:
+            # Encode initial prompt
+            input_ids = self.m_tokenizer.encode(prompt, return_tensors="pt").to(self.m_cuda_device)
+            
+            draft_tokens = []
+            draft_probs = []
+            
+            with torch.no_grad():
+                current_input = input_ids
+                
+                # Generate tokens one by one, tracking probabilities
+                for i in range(num_draft_tokens):
+                    # Get logits for next token
+                    outputs = self.m_model(current_input)
+                    logits = outputs.logits[0, -1, :]  # Last position logits
+                    
+                    # Apply temperature
+                    if temperature != 1.0:
+                        logits = logits / temperature
+                    
+                    # Convert to probabilities
+                    probs = torch.nn.functional.softmax(logits, dim=-1)
+                    
+                    # Sample token
+                    token_id = torch.multinomial(probs, 1).item()
+                    token_prob = probs[token_id].item()
+                    
+                    # Decode token
+                    token = self.m_tokenizer.decode([token_id])
+                    
+                    # Store token and its probability
+                    draft_tokens.append(token)
+                    draft_probs.append(token_prob)
+                    
+                    # Update input for next iteration (autoregressive)
+                    current_input = torch.cat([current_input, torch.tensor([[token_id]]).to(self.m_cuda_device)], dim=1)
+                    
+                    g_logger.debug(f"GPU generated token {i+1}: '{token}' (p={token_prob:.3f})")
+            
+            inference_time = CreateTimestamp() - start_time
+            
+            g_logger.info(f"GPU generated {len(draft_tokens)} draft tokens with probabilities in {inference_time:.3f}s")
+            g_logger.debug(f"Draft sequence: {''.join(draft_tokens)}")
+            g_logger.debug(f"Average probability: {sum(draft_probs)/len(draft_probs):.3f}")
+            
+            return draft_tokens, draft_probs, inference_time
+            
+        except Exception as e:
+            g_logger.error(f"GPU draft generation with probabilities failed: {e}")
             return [], [], CreateTimestamp() - start_time
     
     def GenerateDraftTokens(self, prompt: str, num_draft_tokens: int = 5) -> Tuple[List[str], float]:
@@ -305,6 +434,29 @@ class EdgeDraftModel:
             # Get NPU-specific info
             npu_info = self.m_npu_model.GetModelInfo()
             base_info.update(npu_info)
+        elif self.m_device == "gpu" and self.m_model:
+            # Count parameters for GPU model
+            total_params = sum(p.numel() for p in self.m_model.parameters())
+            trainable_params = sum(p.numel() for p in self.m_model.parameters() if p.requires_grad)
+            
+            # Get GPU memory info
+            gpu_info = {}
+            if torch.cuda.is_available() and self.m_cuda_device:
+                device_id = int(self.m_cuda_device.split(':')[1])
+                gpu_info = {
+                    "gpu_name": torch.cuda.get_device_name(device_id),
+                    "gpu_memory_total": f"{torch.cuda.get_device_properties(device_id).total_memory / 1e9:.1f}GB",
+                    "gpu_memory_allocated": f"{torch.cuda.memory_allocated(device_id) / 1e9:.2f}GB",
+                    "gpu_memory_cached": f"{torch.cuda.memory_reserved(device_id) / 1e9:.2f}GB"
+                }
+            
+            base_info.update({
+                "backend": "PyTorch GPU",
+                "total_parameters": total_params,
+                "trainable_parameters": trainable_params,
+                "memory_footprint": f"{total_params * 2 / 1e9:.2f}GB",  # Approximate for fp16
+                **gpu_info
+            })
         elif self.m_model:
             # Count parameters for CPU model
             total_params = sum(p.numel() for p in self.m_model.parameters())

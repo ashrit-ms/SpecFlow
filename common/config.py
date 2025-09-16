@@ -24,6 +24,10 @@ def load_config() -> Dict[str, Any]:
             "devices": {
                 "edge_device": "cpu",
                 "cloud_device": "auto",
+                "gpu": {
+                    "enabled": False,
+                    "device_id": 0
+                },
                 "npu": {
                     "enabled": False,
                     "fallback_to_cpu": True
@@ -46,6 +50,12 @@ def get_edge_model_config() -> Dict[str, Any]:
     # Determine device to use
     edge_device = config["devices"]["edge_device"]
     
+    # Check GPU configuration
+    gpu_config = config.get("devices", {}).get("gpu", {})
+    if gpu_config.get("enabled", False) and edge_device == "cpu":
+        # GPU is enabled, try to use it
+        edge_device = "gpu"
+    
     # Check NPU configuration
     npu_config = config.get("devices", {}).get("npu", {})
     if npu_config.get("enabled", False) and edge_device == "cpu":
@@ -58,6 +68,7 @@ def get_edge_model_config() -> Dict[str, Any]:
         "max_tokens": config["models"]["max_edge_tokens"],
         "temperature": config["performance"]["temperature"],
         "repetition_penalty": config["performance"]["repetition_penalty"],
+        "gpu_device_id": gpu_config.get("device_id", 0),
         "npu_fallback": npu_config.get("fallback_to_cpu", True)
     }
 

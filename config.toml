@@ -31,8 +31,13 @@ max_cloud_tokens = 10
 
 # Device preferences
 [devices]
-edge_device = "npu"      # Options: "cpu", "npu" (OpenVINO NPU acceleration)
-cloud_device = "auto"   # Auto-detect GPU, fallback to CPU
+edge_device = "npu"      # Options: "cpu", "gpu", "npu" (OpenVINO NPU acceleration)
+cloud_device = "auto"    # Auto-detect GPU, fallback to CPU
+
+# GPU configuration for edge
+[devices.gpu]
+enabled = false          # Set to true to enable GPU acceleration on edge
+device_id = 0            # GPU device ID to use
 
 # NPU configuration
 [devices.npu]

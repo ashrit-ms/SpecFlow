@@ -1,7 +1,7 @@
 """
 Main entry point for running edge client
 Run this on the edge machine (laptop)
-Supports CPU and OpenVINO NPU acceleration
+Supports CPU, GPU (CUDA), and OpenVINO NPU acceleration
 """
 import asyncio
 import sys
@@ -23,8 +23,8 @@ def ParseArguments():
                        help='Cloud server host (default: localhost)')
     parser.add_argument('--port', type=int, default=8765,
                        help='Cloud server port (default: 8765)')
-    parser.add_argument('--device', choices=['cpu', 'npu'], default=None,
-                       help='Edge device type: cpu or npu (default: from config)')
+    parser.add_argument('--device', choices=['cpu', 'gpu', 'npu'], default=None,
+                       help='Edge device type: cpu, gpu, or npu (default: from config)')
     parser.add_argument('--list-devices', action='store_true',
                        help='List available devices and exit')
     
@@ -34,6 +34,20 @@ def ListAvailableDevices():
     """List available devices for edge inference"""
     print("Available edge devices:")
     print("  cpu - PyTorch CPU inference (always available)")
+    
+    # Check GPU availability
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            for i in range(gpu_count):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1e9
+                print(f"  gpu - PyTorch GPU inference (CUDA device {i}: {gpu_name}, {gpu_memory:.1f}GB)")
+        else:
+            print("  gpu - PyTorch GPU inference (CUDA not available)")
+    except ImportError:
+        print("  gpu - PyTorch GPU inference (PyTorch not installed)")
     
     # Check NPU availability
     try:
@@ -120,8 +134,9 @@ if __name__ == "__main__":
     print("")
     print("Examples:")
     print("  python run_edge.py                     # Use default settings")
-    print("  python run_edge.py --device npu        # Force NPU acceleration")
     print("  python run_edge.py --device cpu        # Force CPU inference")
+    print("  python run_edge.py --device gpu        # Force GPU acceleration")
+    print("  python run_edge.py --device npu        # Force NPU acceleration")
     print("  python run_edge.py --host 192.168.1.100 --port 8765  # Remote cloud")
     print("")
     

@@ -27,13 +27,14 @@ g_logger = logging.getLogger(__name__)
 class EdgeDraftModel:
     """Draft model running on edge device with CPU, GPU, or NPU support"""
     
-    def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", device: str = "cpu"):
+    def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", device: str = "cpu", gpu_device_id: int = 0):
         """
         Initialize draft model with device selection
         
         Args:
             model_name: HuggingFace model name
             device: Device to use ("cpu", "gpu", or "npu")
+            gpu_device_id: GPU index to use when device is "gpu"
         """
         self.m_model_name = model_name
         self.m_device = device.lower()
@@ -42,6 +43,7 @@ class EdgeDraftModel:
         self.m_generation_config = None
         self.m_npu_model = None
         self.m_cuda_device = None
+        self.m_gpu_device_id = int(gpu_device_id)
         
         g_logger.info(f"Initializing edge draft model: {model_name}")
         g_logger.info(f"Target device: {self.m_device}")
@@ -53,10 +55,14 @@ class EdgeDraftModel:
                 g_logger.info("Falling back to CPU device")
                 self.m_device = "cpu"
             else:
-                # Set CUDA device
-                self.m_cuda_device = f"cuda:0"  # Default to first GPU
-                g_logger.info(f"GPU available: {torch.cuda.get_device_name(0)}")
-                g_logger.info(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+                # Set CUDA device using configured GPU index
+                self.m_cuda_device = f"cuda:{self.m_gpu_device_id}"
+                try:
+                    g_logger.info(f"GPU available: {torch.cuda.get_device_name(self.m_gpu_device_id)}")
+                    g_logger.info(f"GPU memory: {torch.cuda.get_device_properties(self.m_gpu_device_id).total_memory / 1e9:.1f} GB")
+                except Exception:
+                    # Fallback to device 0 logging if index lookup fails
+                    g_logger.info(f"GPU available (index {self.m_gpu_device_id})")
         
         elif self.m_device == "npu":
             if not OPENVINO_AVAILABLE:

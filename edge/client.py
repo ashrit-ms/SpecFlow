@@ -28,11 +28,13 @@ class EdgeClient:
         # Get device configuration
         edge_config = get_edge_model_config()
         self.m_device = device if device is not None else edge_config["device"]
+        self.m_gpu_device_id = edge_config.get("gpu_device_id", 0)
         
-        # Initialize draft model with configured device
+        # Initialize draft model with configured device and GPU index
         self.m_draft_model = EdgeDraftModel(
             model_name=edge_config["model_name"],
-            device=self.m_device
+            device=self.m_device,
+            gpu_device_id=self.m_gpu_device_id
         )
         
         self.m_websocket = None

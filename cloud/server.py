@@ -13,6 +13,7 @@ from common.protocol import (
     SerializeMessage, DeserializeMessage, CreateTimestamp,
     CalculateAcceptanceRate
 )
+from common.config import get_cloud_model_config
 from cloud.target_model import CloudTargetModel
 
 # Configure logging
@@ -25,7 +26,9 @@ class CloudServer:
     def __init__(self, host: str = "0.0.0.0", port: int = 8765):
         self.m_host = host
         self.m_port = port
-        self.m_target_model = CloudTargetModel()
+        
+        cloud_config = get_cloud_model_config()
+        self.m_target_model = CloudTargetModel(model_name=cloud_config["model_name"])
         self.m_connected_clients = set()
         
     async def Initialize(self) -> bool:

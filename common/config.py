@@ -47,29 +47,22 @@ def get_edge_model_config() -> Dict[str, Any]:
     """Get edge model configuration with device selection"""
     config = load_config()
     
-    # Determine device to use
-    edge_device = config["devices"]["edge_device"]
-    
-    # Check GPU configuration
+    # Read requested device and low-level backend settings
+    edge_device = config.get("devices", {}).get("edge_device", "cpu")
     gpu_config = config.get("devices", {}).get("gpu", {})
-    if gpu_config.get("enabled", False) and edge_device == "cpu":
-        # GPU is enabled, try to use it
-        edge_device = "gpu"
-    
-    # Check NPU configuration
     npu_config = config.get("devices", {}).get("npu", {})
-    if npu_config.get("enabled", False) and edge_device == "cpu":
-        # NPU is enabled, try to use it
-        edge_device = "npu"
-    
+
+    # Return raw configuration values so callers can decide how to apply them
     return {
-        "model_name": config["models"]["edge_model"],
+        "model_name": config.get("models", {}).get("edge_model", "meta-llama/Llama-3.2-1B-Instruct"),
         "device": edge_device,
-        "max_tokens": config["models"]["max_edge_tokens"],
-        "temperature": config["performance"]["temperature"],
-        "repetition_penalty": config["performance"]["repetition_penalty"],
-        "gpu_device_id": gpu_config.get("device_id", 0),
-        "npu_fallback": npu_config.get("fallback_to_cpu", True)
+        "max_tokens": config.get("models", {}).get("max_edge_tokens", 5),
+        "temperature": config.get("performance", {}).get("temperature", 0.7),
+        "repetition_penalty": config.get("performance", {}).get("repetition_penalty", 1.1),
+        "gpu_enabled": bool(gpu_config.get("enabled", False)),
+        "gpu_device_id": int(gpu_config.get("device_id", 0)),
+        "npu_enabled": bool(npu_config.get("enabled", False)),
+        "npu_fallback": bool(npu_config.get("fallback_to_cpu", True))
     }
 
 def get_cloud_model_config() -> Dict[str, Any]:

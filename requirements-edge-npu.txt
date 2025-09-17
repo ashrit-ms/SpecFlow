@@ -1,0 +1,33 @@
+﻿# Edge Client Requirements - OpenVINO NPU
+# Dependencies for OpenVINO NPU-accelerated edge inference
+# Install with: pip install -r requirements-edge-npu.txt
+
+# Core ML dependencies (CPU versions work fine with NPU)
+torch>=2.0.0
+torchaudio>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+accelerate>=0.20.0
+tokenizers>=0.13.0
+
+# Networking and communication
+websockets>=11.0
+httpx>=0.24.0
+pydantic>=2.0.0
+toml>=0.10.2
+
+# System monitoring
+psutil>=5.9.0
+
+# OpenVINO NPU support (using pre-converted model - no dev tools needed)
+openvino>=2024.6.0
+optimum[openvino]>=1.22.0
+
+# Testing
+pytest>=7.0.0
+
+# Utilities (with version constraints to resolve OpenVINO conflicts)
+tqdm>=4.65.0
+numpy>=1.22.4,<2.0.0  # SciPy compatibility (>=1.22.4) + OpenVINO compatibility (<2.0.0)
+networkx>=3.0,<=3.1.0  # Constrain for openvino-dev compatibility
+pillow>=7.1.0,<11.0.0  # Constrain for potential visualization needs

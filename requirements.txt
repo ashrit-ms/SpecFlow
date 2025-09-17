@@ -1,7 +1,26 @@
-# Core dependencies for SpecECD implementation
-torch>=2.0.0+cu121
-torchaudio>=2.0.0+cu121
-torchvision>=0.15.0+cu121
+# SpecECD: Speculative Edge-Cloud Decoding Requirements
+# 
+# This project has separate requirements for cloud and edge deployments.
+# Please use the appropriate requirements file for your setup:
+#
+# For Cloud Server (CUDA GPU only):
+#   pip install -r requirements-cloud.txt
+#
+# For Edge Client (CPU, GPU, NPU support):
+#   pip install -r requirements-edge.txt
+#
+# For development/testing (both cloud and edge):
+#   pip install -r requirements-cloud.txt
+#   pip install -r requirements-edge.txt
+#
+# Note: Always install PyTorch with CUDA first if you want GPU support:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Common dependencies (if you need to install everything together)
+# Core ML dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+torchvision>=0.15.0
 transformers>=4.30.0
 accelerate>=0.20.0
 tokenizers>=0.13.0
@@ -24,13 +43,15 @@ datasets>=2.12.0
 evaluate>=0.4.0
 
 # OpenVINO NPU support
-openvino>=2023.3.0
-openvino-dev>=2023.3.0
-optimum[openvino]>=1.16.0
+openvino>=2024.0.0,<2024.5.0
+openvino-dev>=2024.0.0,<2024.5.0
+optimum[openvino]>=1.18.0,<1.22.0
 
-# Utilities
+# Utilities (with version constraints to resolve conflicts)
 tqdm>=4.65.0
-numpy>=1.24.0
+numpy>=1.22.4,<2.0.0  # SciPy compatibility (>=1.22.4) + OpenVINO compatibility (<2.0.0)
 pandas>=2.0.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
+networkx>=3.0,<=3.1.0  # Constrain for openvino-dev compatibility
+pillow>=7.1.0,<11.0.0  # Constrain for streamlit compatibility

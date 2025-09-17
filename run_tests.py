@@ -42,6 +42,12 @@ def ParseArguments():
         default=8765, 
         help='Cloud server port (default: 8765)'
     )
+    parser.add_argument(
+        '--device',
+        type=str,
+        choices=['cpu', 'gpu', 'npu'],
+        help='Edge device to use for testing (cpu, gpu, npu). If not specified, uses config.toml setting'
+    )
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -51,6 +57,10 @@ if __name__ == "__main__":
     print("Testing speculative decoding with corrected implementation")
     print("Make sure cloud server is running before starting tests")
     print(f"Testing with {args.num_prompts} prompts, {args.iterations} iterations each")
+    if args.device:
+        print(f"Edge device override: {args.device}")
+    else:
+        print("Edge device: using config.toml setting")
     print("")
     
     try:
@@ -58,7 +68,8 @@ if __name__ == "__main__":
             num_prompts=args.num_prompts,
             num_iterations=args.iterations,
             cloud_host=args.host,
-            cloud_port=args.port
+            cloud_port=args.port,
+            edge_device=args.device
         ))
     except KeyboardInterrupt:
         g_logger.info("Performance test interrupted")

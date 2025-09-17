@@ -8,7 +8,26 @@ This project implements a distributed inference system where:
 - **Edge Device**: Runs a small draft model (Llama-3.2-1B-Instruct) to generate speculative tokens with probabilities
   - **CPU Support**: PyTorch-based inference for broad compatibility
   - **GPU Support**: CUDA acceleration for faster edge inference
-  - **NPU Support**: OpenVINO NPU acceleration for Intel Arc GPUs and dedicated NPU hardware
+  - 4. **RoPE Scaling Configuration Error** (`rope_scaling must be a dictionary with two fields`):
+   - **Problem**: Older OpenVINO versions had issues with Llama 3.2's extended RoPE scaling format
+   - **Solution**: Upgrade to OpenVINO 2025.3.0 which includes improved RoPE support:
+     ```bash
+     # Upgrade to latest OpenVINO with RoPE fixes
+     pip uninstall openvino openvino-dev optimum -y
+     pip install "openvino==2025.3.0" "openvino-dev==2025.3.0" "optimum[openvino]>=1.22.0"
+     ```
+   - **If issue persists**: Use fallback devices while we investigate:
+     ```bash
+     # Use CPU mode (always works)
+     python run_tests.py --device cpu
+     
+     # Use GPU mode if NVIDIA GPU available
+     python run_tests.py --device gpu
+     
+     # Check what devices work on your system
+     python run_edge.py --list-devices
+     ```
+   - **Note**: Latest OpenVINO 2025.3.0 should resolve most RoPE compatibility issuesport**: OpenVINO NPU acceleration for Intel Arc GPUs and dedicated NPU hardware
 - **Cloud Server**: Runs a larger target model (Llama-3.1-8B-Instruct) for probabilistic verification and completion
 - **Communication**: WebSocket-based protocol for real-time coordination
 
@@ -32,6 +51,9 @@ This project implements a distributed inference system where:
   - **CPU**: PyTorch inference (default, compatible with all systems)
   - **GPU**: CUDA acceleration (NVIDIA GPUs, faster inference)
   - **NPU**: OpenVINO NPU acceleration (Intel Arc GPUs, dedicated NPU hardware)
+    - Automatically uses pre-converted model: `srang992/Llama-3.2-1B-Instruct-ov-INT8`
+    - INT8 quantization for better NPU performance
+    - Bypasses RoPE scaling conversion issues
 
 ### Cloud (Target Model)  
 - **Model**: meta-llama/Llama-3.1-8B-Instruct
@@ -40,16 +62,121 @@ This project implements a distributed inference system where:
 
 ## Setup Instructions
 
-### Prerequisites
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
+### Cloud Server Setup (CUDA GPU Only)
 
-# For GPU support, install appropriate PyTorch version with CUDA
+The cloud server only needs CUDA GPU support for running the larger target model.
+
+```bash
+# 1. Create environment (recommended)
+conda create -n specd-cloud python=3.11
+conda activate specd-cloud
+
+# OR with venv
+python -m venv specd_cloud_env
+# Windows
+specd_cloud_env\Scripts\activate
+# Linux/Mac
+source specd_cloud_env/bin/activate
+
+# 2. Install PyTorch with CUDA
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# For OpenVINO NPU acceleration (optional)
-pip install openvino openvino-dev optimum[openvino]
+# 3. Install cloud dependencies
+pip install -r requirements-cloud.txt
+```
+
+### Edge Client Setup (CPU, GPU, NPU Support)
+
+The edge client supports multiple acceleration options. Choose the appropriate setup for your hardware:
+
+#### Option A: CPU-Only Edge Inference
+Perfect for development, testing, or systems without GPU/NPU acceleration.
+
+```bash
+# 1. Create environment
+conda create -n specd-edge-cpu python=3.11
+conda activate specd-edge-cpu
+
+# OR with venv
+python -m venv specd_edge_cpu_env
+# Windows: specd_edge_cpu_env\Scripts\activate
+# Linux/Mac: source specd_edge_cpu_env/bin/activate
+
+# 2. Install CPU-only dependencies
+pip install torch torchvision torchaudio  # CPU version
+pip install -r requirements-edge-cpu.txt
+```
+
+#### Option B: CUDA GPU Edge Inference  
+For NVIDIA GPUs - provides significant speedup over CPU.
+
+```bash
+# 1. Create environment
+conda create -n specd-edge-gpu python=3.11
+conda activate specd-edge-gpu
+
+# OR with venv
+python -m venv specd_edge_gpu_env
+# Windows: specd_edge_gpu_env\Scripts\activate
+# Linux/Mac: source specd_edge_gpu_env/bin/activate
+
+# 2. Install PyTorch with CUDA
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 3. Install GPU-specific dependencies
+pip install -r requirements-edge-gpu.txt
+```
+
+#### Option C: OpenVINO NPU Edge Inference
+For Intel Arc GPUs and NPU-enabled CPUs - optimized for AI inference.
+
+```bash
+# 1. Create environment
+conda create -n specd-edge-npu python=3.11
+conda activate specd-edge-npu
+
+# OR with venv
+python -m venv specd_edge_npu_env
+# Windows: specd_edge_npu_env\Scripts\activate
+# Linux/Mac: source specd_edge_npu_env/bin/activate
+
+# 2. Install NPU-specific dependencies
+pip install torch torchvision torchaudio  # CPU version works with NPU
+pip install -r requirements-edge-npu.txt
+```
+
+### Development Setup (Both Cloud and Edge)
+
+For development or testing both components:
+
+```bash
+# 1. Create environment
+conda create -n specd-dev python=3.11
+conda activate specd-dev
+
+# 2. Install PyTorch with CUDA (for cloud compatibility)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 3. Install both cloud and edge dependencies
+pip install -r requirements-cloud.txt
+pip install -r requirements-edge.txt
+```
+
+**Verify Installation:**
+```bash
+# Verify core functionality (all setups)
+python -c "import torch, transformers, websockets; print('Core imports successful')"
+
+# Verify GPU support (cloud and edge GPU setups)
+python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+python -c "import torch; print('CUDA devices:', torch.cuda.device_count())"
+
+# Verify GPU monitoring (edge GPU setup)
+python -c "import pynvml; print('NVIDIA-ML available')"
+
+# Verify NPU support (edge NPU setup)  
+python -c "import openvino; print('OpenVINO version:', openvino.__version__)"
+python -c "import optimum.intel; print('Optimum Intel available')"
 ```
 
 ### GPU Setup (Optional)
@@ -143,14 +270,24 @@ python run_edge.py --list-devices
 
 ### 3. Run Performance Tests
 ```bash
-# Test with default 5 prompts, 2 iterations each
+# Test with default 5 prompts, 2 iterations each (uses config.toml device)
 python run_tests.py
 
 # Test with custom number of prompts
 python run_tests.py --num-prompts 3 --iterations 1
 
-# Test with remote server
-python run_tests.py --host 192.168.1.100 --port 8765
+# Test with specific device
+python run_tests.py --device cpu     # Force CPU testing
+python run_tests.py --device gpu     # Force GPU testing  
+python run_tests.py --device npu     # Force NPU testing
+
+# Test with remote server and specific device
+python run_tests.py --host 192.168.1.100 --port 8765 --device gpu
+
+# Performance comparison across devices
+python run_tests.py --device cpu --num-prompts 3 --iterations 2
+python run_tests.py --device gpu --num-prompts 3 --iterations 2
+python run_tests.py --device npu --num-prompts 3 --iterations 2
 ```
 
 ## Test Options
@@ -160,6 +297,20 @@ python run_tests.py --host 192.168.1.100 --port 8765
 - `--iterations N`: Number of iterations per prompt (default: 2)
 - `--host HOST`: Cloud server host (default: localhost)
 - `--port PORT`: Cloud server port (default: 8765)
+- `--device DEVICE`: Edge device to use (cpu, gpu, npu). If not specified, uses config.toml setting
+
+### Device Testing Examples
+```bash
+# Compare CPU vs GPU performance
+python run_tests.py --device cpu --num-prompts 5 --iterations 2
+python run_tests.py --device gpu --num-prompts 5 --iterations 2
+
+# Test NPU acceleration
+python run_tests.py --device npu --num-prompts 3 --iterations 1
+
+# Remote server with GPU edge
+python run_tests.py --host 192.168.1.100 --device gpu
+```
 
 ### Test Prompts
 The system tests diverse prompts including:
@@ -168,12 +319,24 @@ The system tests diverse prompts including:
 - Programming tasks
 - General knowledge topics
 
+### Performance Testing Benefits
+- **Device Comparison**: Test CPU vs GPU vs NPU performance side-by-side
+- **Hardware Validation**: Verify acceleration is working correctly
+- **Optimization Guidance**: Identify best device for your workload
+- **Acceptance Rate Analysis**: Compare token acceptance across devices
+- **Latency Breakdown**: Detailed timing analysis per device type
+
 ## File Structure
 
 ```
 SpecECD/
-├── requirements.txt           # Python dependencies
-├── config.toml               # Configuration file with device options
+├── requirements.txt              # All dependencies (for development)
+├── requirements-cloud.txt        # Cloud server dependencies (CUDA GPU only)
+├── requirements-edge.txt         # Edge client dependencies (all options)
+├── requirements-edge-cpu.txt     # Edge client dependencies (CPU only)
+├── requirements-edge-gpu.txt     # Edge client dependencies (CUDA GPU)
+├── requirements-edge-npu.txt     # Edge client dependencies (OpenVINO NPU)
+├── config.toml                   # Configuration file with device options
 ├── run_cloud.py              # Cloud server entry point
 ├── run_edge.py               # Edge client entry point  
 ├── run_tests.py              # Performance test entry point
@@ -267,6 +430,62 @@ The test report includes automatic assessment:
 5. **GPU Not Available**: Run `python test_gpu.py` to check GPU status
 6. **NPU Not Available**: Run `python test_npu.py` to check NPU status
 
+### Dependency Conflicts
+**Problem**: pip dependency resolver shows version conflicts (numpy, networkx, pillow)
+
+**Common Error Messages**:
+```
+contourpy 1.2.0 requires numpy<2.0,>=1.20, but you have numpy 2.1.2
+openvino-dev requires networkx<=3.1.0, but you have networkx 3.3
+streamlit requires pillow<11,>=7.1.0, but you have pillow 11.0.0
+```
+
+**Solutions**:
+
+1. **Use Device-Specific Requirements (Recommended)**:
+   ```bash
+   # For cloud only (no OpenVINO conflicts)
+   pip install -r requirements-cloud.txt
+   
+   # For edge CPU (minimal dependencies)
+   pip install -r requirements-edge-cpu.txt
+   
+   # For edge GPU (no OpenVINO conflicts)
+   pip install -r requirements-edge-gpu.txt
+   
+   # For edge NPU (has pre-resolved compatibility constraints)
+   pip install -r requirements-edge-npu.txt
+   ```
+
+2. **Clean Environment**:
+   ```bash
+   # Create device-specific environment
+   conda create -n specd-edge-npu python=3.11  # or cpu/gpu
+   conda activate specd-edge-npu
+   
+   # Install device-specific requirements
+   pip install -r requirements-edge-npu.txt
+   ```
+
+3. **Force Compatible Versions** (only needed for NPU setup):
+   ```bash
+   # Only needed if using the combined requirements-edge.txt
+   pip install "numpy>=1.24.0,<2.0.0" "networkx<=3.1.0" "pillow<11.0.0" --force-reinstall
+   pip install -r requirements-edge-npu.txt --force-reinstall
+   ```
+
+**Verification**:
+```bash
+# Check for conflicts
+pip check
+
+# Verify device-specific imports
+python -c "import torch, transformers; print('Core imports successful')"
+
+# For NPU setup only
+python -c "import openvino, numpy, networkx; print('NPU imports successful')"
+```
+
 ### GPU Issues
 1. **GPU Not Detected**:
    - Check hardware compatibility (NVIDIA GPU with CUDA support)
@@ -274,12 +493,21 @@ The test report includes automatic assessment:
    - Verify CUDA installation: `nvidia-smi`
    - Check PyTorch CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
 
-2. **CUDA Out of Memory**:
+2. **PyTorch CUDA Installation Issues**:
+   - **Problem**: "CUDA not available" warning even after installing CUDA PyTorch
+   - **Solution**: Uninstall and reinstall PyTorch with CUDA:
+     ```bash
+     pip uninstall torch torchvision torchaudio
+     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+     ```
+   - **Verify**: `python -c "import torch; print('CUDA version:', torch.version.cuda)"`
+
+3. **CUDA Out of Memory**:
    - Close other GPU applications to free memory
    - Try CPU fallback: `--device cpu`
    - Monitor GPU memory usage: `nvidia-smi`
 
-3. **Performance Lower Than Expected**:
+4. **Performance Lower Than Expected**:
    - Check if GPU is actually being used in model info output
    - Monitor GPU utilization: `nvidia-smi -l 1`
    - Compare with CPU baseline: `python run_edge.py --device cpu`
@@ -290,12 +518,50 @@ The test report includes automatic assessment:
    - Update Intel graphics drivers
    - Verify OpenVINO installation: `python -c "import openvino; print('OpenVINO OK')"`
 
-2. **Model Conversion Failed**:
+2. **OpenVINO API Compatibility Error** (`module 'openvino' has no attribute 'Node'`):
+   - **Problem**: Version mismatch between OpenVINO and optimum[openvino]
+   - **Solution**: Complete uninstall and reinstall with latest versions:
+     ```bash
+     # Step 1: Complete uninstall
+     pip uninstall openvino openvino-dev optimum -y
+     pip uninstall transformers huggingface-hub -y
+     
+     # Step 2: Clear pip cache
+     pip cache purge
+     
+     # Step 3: Reinstall with latest versions (includes Llama 3.2 RoPE support)
+     pip install "openvino==2025.3.0" "openvino-dev==2024.6.0" "optimum[openvino]>=1.25.2"
+     
+     # Step 4: Verify installation
+     python -c "import openvino; print('OpenVINO version:', openvino.__version__)"
+     python -c "from optimum.intel import OVModelForCausalLM; print('Optimum Intel OK')"
+     ```
+   - **Alternative**: Use the NPU requirements file:
+     ```bash
+     pip uninstall openvino openvino-dev optimum transformers huggingface-hub -y
+     pip install -r requirements-edge-npu.txt
+     ```
+
+3. **Model Conversion Failed**:
    - Ensure sufficient disk space for IR model files
    - Check internet connection for model download
    - Try CPU fallback: `--device cpu`
 
-3. **Performance Lower Than Expected**:
+4. **RoPE Scaling Configuration Error** (`rope_scaling must be a dictionary with two fields`):
+   - **Problem**: Original Llama 3.2 models use extended RoPE scaling format not supported by OpenVINO
+   - **Solution**: For NPU inference, we automatically use a pre-converted OpenVINO model:
+     - **NPU Model**: `srang992/Llama-3.2-1B-Instruct-ov-INT8`
+     - **Benefits**: No conversion needed, INT8 quantization, better NPU performance
+     - **Automatic**: System detects Llama 3.2 and switches to pre-converted model for NPU only
+     - **CPU/GPU**: Continue using original model without issues
+   - **If issue still persists**: Use fallback devices:
+     ```bash
+     python run_tests.py --device cpu   # Fallback to CPU
+     python run_tests.py --device gpu   # Use GPU if available
+     ```
+   - **Note**: Pre-converted model only used for NPU - CPU/GPU use original model
+
+5. **Performance Lower Than Expected**:
    - Check if NPU is actually being used in model info output
    - Verify no other processes are using NPU
    - Compare with CPU baseline: `python run_edge.py --device cpu`

@@ -29,8 +29,19 @@ class OpenVINONPUModel:
     """OpenVINO NPU accelerated model for edge inference"""
     
     def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct"):
-        """Initialize OpenVINO NPU model"""
-        self.m_model_name = model_name
+        """Initialize OpenVINO NPU model with automatic pre-converted model selection"""
+        self.m_original_model_name = model_name
+        
+        # For NPU, use pre-converted model if available
+        if model_name == "meta-llama/Llama-3.2-1B-Instruct":
+            self.m_model_name = "srang992/Llama-3.2-1B-Instruct-ov-INT8"
+            self.m_use_preconverted = True
+            g_logger.info(f"NPU: Using pre-converted OpenVINO model")
+            g_logger.info(f"NPU Model: {self.m_model_name}")
+        else:
+            self.m_model_name = model_name
+            self.m_use_preconverted = "ov" in model_name.lower() or "openvino" in model_name.lower()
+        
         self.m_device = "NPU"
         self.m_tokenizer = None
         self.m_model = None
@@ -39,10 +50,12 @@ class OpenVINONPUModel:
         
         if not OPENVINO_AVAILABLE:
             raise ImportError(
-                "OpenVINO not available. Install with: pip install openvino openvino-dev optimum[openvino]"
+                "OpenVINO not available. Install with: pip install openvino optimum[openvino]"
             )
         
-        g_logger.info(f"Initializing OpenVINO NPU model: {model_name}")
+        g_logger.info(f"Initializing OpenVINO NPU model: {self.m_model_name}")
+        if self.m_use_preconverted:
+            g_logger.info("Using pre-converted OpenVINO model - bypasses RoPE scaling issues")
         
     def _CheckNPUAvailability(self) -> bool:
         """Check if NPU device is available"""
@@ -74,8 +87,9 @@ class OpenVINONPUModel:
             
             # Load tokenizer
             g_logger.info("Loading tokenizer...")
+            # Use tokenizer from the same model repository (pre-converted or original)
             self.m_tokenizer = AutoTokenizer.from_pretrained(
-                self.m_model_name,
+                self.m_model_name,  # Use the actual model being loaded
                 trust_remote_code=True
             )
             
@@ -83,21 +97,33 @@ class OpenVINONPUModel:
             if self.m_tokenizer.pad_token is None:
                 self.m_tokenizer.pad_token = self.m_tokenizer.eos_token
             
-            # Create temporary directory for OpenVINO IR files
-            self.m_temp_dir = tempfile.mkdtemp(prefix="openvino_model_")
-            self.m_ov_model_path = Path(self.m_temp_dir) / "model"
+            # Create temporary directory for OpenVINO IR files (only if needed)
+            if not self.m_use_preconverted:
+                self.m_temp_dir = tempfile.mkdtemp(prefix="openvino_model_")
+                self.m_ov_model_path = Path(self.m_temp_dir) / "model"
             
-            g_logger.info("Converting and loading model for NPU...")
+            g_logger.info("Loading model for NPU...")
             
             # Load model using Optimum with NPU device
-            # This will automatically convert the model to OpenVINO IR format
-            self.m_model = OVModelForCausalLM.from_pretrained(
-                self.m_model_name,
-                export=True,  # Convert to OpenVINO IR
-                device=self.m_device,  # Target NPU
-                trust_remote_code=True,
-                cache_dir=self.m_temp_dir
-            )
+            if self.m_use_preconverted:
+                # Pre-converted model - no export needed
+                g_logger.info("Loading pre-converted OpenVINO model (no conversion needed)")
+                self.m_model = OVModelForCausalLM.from_pretrained(
+                    self.m_model_name,
+                    export=False,  # Already in OpenVINO format
+                    device=self.m_device,  # Target NPU
+                    trust_remote_code=True
+                )
+            else:
+                # Original model - needs conversion
+                g_logger.info("Converting and loading model for NPU...")
+                self.m_model = OVModelForCausalLM.from_pretrained(
+                    self.m_model_name,
+                    export=True,  # Convert to OpenVINO IR
+                    device=self.m_device,  # Target NPU
+                    trust_remote_code=True,
+                    cache_dir=self.m_temp_dir
+                )
             
             g_logger.info("OpenVINO NPU model loaded successfully")
             return True

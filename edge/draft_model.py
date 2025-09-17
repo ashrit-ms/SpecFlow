@@ -91,11 +91,18 @@ class EdgeDraftModel:
         """Load model for NPU inference using OpenVINO"""
         g_logger.info("Loading model for NPU inference...")
         
-        # Create and load NPU model
+        # Create and load NPU model (OpenVINO wrapper handles model selection)
         self.m_npu_model = OpenVINONPUModel(self.m_model_name)
         
         if not self.m_npu_model.LoadModel():
             g_logger.error("Failed to load NPU model")
+            g_logger.info("NPU loading failed. Common causes:")
+            g_logger.info("1. NPU driver/hardware compatibility (update Intel drivers)")
+            g_logger.info("2. OpenVINO version compatibility")
+            g_logger.info("3. Model format issues (now using pre-converted model)")
+            g_logger.info("Recommended fallbacks:")
+            g_logger.info("  python run_tests.py --device cpu")
+            g_logger.info("  python run_tests.py --device gpu")
             return False
         
         # Get tokenizer from NPU model

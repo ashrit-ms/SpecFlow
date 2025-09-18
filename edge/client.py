@@ -21,24 +21,28 @@ g_logger = logging.getLogger(__name__)
 class EdgeClient:
     """Client running on edge device to communicate with cloud"""
     
-    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765, device: str = None):
+    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765, device: str = None, model_path: str = None):
         self.m_cloud_host = cloud_host
         self.m_cloud_port = cloud_port
         
         # Get device configuration
         edge_config = get_edge_model_config()
         self.m_device = device if device is not None else edge_config["device"]
+        self.m_model_path = model_path
         
         # Initialize draft model with configured device
         self.m_draft_model = EdgeDraftModel(
             model_name=edge_config["model_name"],
-            device=self.m_device
+            device=self.m_device,
+            model_path=self.m_model_path
         )
         
         self.m_websocket = None
         self.m_performance_metrics = PerformanceMetrics()
         
         g_logger.info(f"EdgeClient initialized with device: {self.m_device}")
+        if self.m_model_path:
+            g_logger.info(f"Model path: {self.m_model_path}")
         
     async def Initialize(self) -> bool:
         """Initialize the edge client and load draft model"""

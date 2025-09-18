@@ -1,7 +1,7 @@
 """
 Main entry point for running edge client
 Run this on the edge machine (laptop)
-Supports CPU, GPU (CUDA), and OpenVINO NPU acceleration
+Supports CPU, GPU (CUDA), and WCR NPU acceleration
 """
 import asyncio
 import sys
@@ -25,6 +25,8 @@ def ParseArguments():
                        help='Cloud server port (default: 8765)')
     parser.add_argument('--device', choices=['cpu', 'gpu', 'npu'], default=None,
                        help='Edge device type: cpu, gpu, or npu (default: from config)')
+    parser.add_argument('--model-path', type=str, default=None,
+                       help='Path to ONNX model folder (required for --device npu)')
     parser.add_argument('--list-devices', action='store_true',
                        help='List available devices and exit')
     
@@ -51,14 +53,14 @@ def ListAvailableDevices():
     
     # Check NPU availability
     try:
-        from edge.openvino_model import IsNPUAvailable
-        if IsNPUAvailable():
-            print("  npu - OpenVINO NPU acceleration (available)")
+        from edge.wcr_npu_model import IsWCRNPUAvailable
+        if IsWCRNPUAvailable():
+            print("  npu - WCR NPU acceleration (available)")
         else:
-            print("  npu - OpenVINO NPU acceleration (not available)")
+            print("  npu - WCR NPU acceleration (not available)")
     except ImportError:
-        print("  npu - OpenVINO NPU acceleration (not installed)")
-        print("        Install with: pip install openvino openvino-dev optimum[openvino]")
+        print("  npu - WCR NPU acceleration (not installed)")
+        print("        Install with: pip install -r requirements-edge-wcr-npu.txt")
 
 async def RunEdgeClient():
     """Main function to run edge client"""
@@ -72,11 +74,31 @@ async def RunEdgeClient():
     g_logger.info(f"Starting edge client, connecting to {args.host}:{args.port}")
     if args.device:
         g_logger.info(f"Using device: {args.device}")
+        if args.model_path:
+            g_logger.info(f"Model path: {args.model_path}")
     else:
         g_logger.info("Using device from configuration")
     
+    # Validate NPU requirements
+    if args.device == 'npu':
+        if not args.model_path:
+            g_logger.error("--model-path is required when using --device npu")
+            g_logger.error("Example: python run_edge.py --device npu --model-path /path/to/onnx/model")
+            return
+        
+        try:
+            from edge.wcr_npu_model import ValidateWCRModelPath
+            if not ValidateWCRModelPath(args.model_path):
+                g_logger.error(f"Invalid WCR ONNX model path: {args.model_path}")
+                g_logger.error("Path must contain ONNX files and config.json")
+                return
+        except ImportError:
+            g_logger.error("WCR NPU support not available")
+            g_logger.error("Install with: pip install -r requirements-edge-wcr-npu.txt")
+            return
+    
     # Create and initialize edge client
-    edge_client = EdgeClient(args.host, args.port, args.device)
+    edge_client = EdgeClient(args.host, args.port, args.device, args.model_path)
     
     if not await edge_client.Initialize():
         g_logger.error("Failed to initialize edge client")
@@ -129,14 +151,14 @@ async def RunEdgeClient():
 if __name__ == "__main__":
     print("SpecECD Edge Client")
     print("Usage:")
-    print("  python run_edge.py [--host HOST] [--port PORT] [--device {cpu,npu}]")
+    print("  python run_edge.py [--host HOST] [--port PORT] [--device {cpu,gpu,npu}] [--model-path PATH]")
     print("  python run_edge.py --list-devices")
     print("")
     print("Examples:")
     print("  python run_edge.py                     # Use default settings")
     print("  python run_edge.py --device cpu        # Force CPU inference")
     print("  python run_edge.py --device gpu        # Force GPU acceleration")
-    print("  python run_edge.py --device npu        # Force NPU acceleration")
+    print("  python run_edge.py --device npu --model-path /path/to/onnx/model  # Force WCR NPU acceleration")
     print("  python run_edge.py --host 192.168.1.100 --port 8765  # Remote cloud")
     print("")
     

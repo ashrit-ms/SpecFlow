@@ -50,10 +50,10 @@ This project implements a distributed inference system where:
 - **Acceleration Options**:
   - **CPU**: PyTorch inference (default, compatible with all systems)
   - **GPU**: CUDA acceleration (NVIDIA GPUs, faster inference)
-  - **NPU**: OpenVINO NPU acceleration (Intel Arc GPUs, dedicated NPU hardware)
-    - Automatically uses pre-converted model: `srang992/Llama-3.2-1B-Instruct-ov-INT8`
-    - INT8 quantization for better NPU performance
-    - Bypasses RoPE scaling conversion issues
+  - **NPU**: WCR NPU acceleration (Qualcomm Snapdragon NPU via ONNX Runtime GenAI)
+    - Uses WCR-format ONNX models with WinML execution providers
+    - Optimized for Qualcomm Neural Processing Units (NPU/HTP)
+    - INT8/FP16 quantization for efficient NPU performance
 
 ### Cloud (Target Model)  
 - **Model**: meta-llama/Llama-3.1-8B-Instruct
@@ -127,22 +127,22 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install -r requirements-edge-gpu.txt
 ```
 
-#### Option C: OpenVINO NPU Edge Inference
-For Intel Arc GPUs and NPU-enabled CPUs - optimized for AI inference.
+#### Option C: WCR NPU Edge Inference
+For Qualcomm Snapdragon NPU acceleration using Windows Compatible Runtime (WCR).
 
 ```bash
 # 1. Create environment
-conda create -n specd-edge-npu python=3.11
-conda activate specd-edge-npu
+conda create -n specd-edge-wcr-npu python=3.11
+conda activate specd-edge-wcr-npu
 
 # OR with venv
-python -m venv specd_edge_npu_env
-# Windows: specd_edge_npu_env\Scripts\activate
-# Linux/Mac: source specd_edge_npu_env/bin/activate
+python -m venv specd_edge_wcr_npu_env
+# Windows: specd_edge_wcr_npu_env\Scripts\activate
+# Linux/Mac: source specd_edge_wcr_npu_env/bin/activate
 
-# 2. Install NPU-specific dependencies
+# 2. Install WCR NPU-specific dependencies
 pip install torch torchvision torchaudio  # CPU version works with NPU
-pip install -r requirements-edge-npu.txt
+pip install -r requirements-edge-wcr-npu.txt
 ```
 
 ### Development Setup (Both Cloud and Edge)
@@ -174,9 +174,9 @@ python -c "import torch; print('CUDA devices:', torch.cuda.device_count())"
 # Verify GPU monitoring (edge GPU setup)
 python -c "import pynvml; print('NVIDIA-ML available')"
 
-# Verify NPU support (edge NPU setup)  
-python -c "import openvino; print('OpenVINO version:', openvino.__version__)"
-python -c "import optimum.intel; print('Optimum Intel available')"
+# Verify WCR NPU support (edge WCR NPU setup)  
+python -c "import onnxruntime_genai; print('ONNX Runtime GenAI available')"
+python -c "import winui3; print('WinUI3 available for execution provider discovery')"
 ```
 
 ### GPU Setup (Optional)
@@ -209,17 +209,17 @@ enabled = true       # Try GPU, fallback to CPU if unavailable
 device_id = 0        # Use first GPU
 ```
 
-### OpenVINO NPU Setup (Optional)
+### WCR NPU Setup (Qualcomm Snapdragon)
 
-OpenVINO NPU provides hardware acceleration for Intel Arc GPUs and dedicated NPU chips:
+WCR NPU provides hardware acceleration for Qualcomm Snapdragon NPU/HTP via ONNX Runtime GenAI:
 
 #### 1. Check NPU Availability
 ```bash
-# List available edge devices
-python run_edge.py --list-devices
+# Test WCR NPU functionality
+python test_wcr_npu.py
 
-# Test NPU functionality
-python test_npu.py
+# List available execution providers
+python -c "from edge.wcr_winml_helper import get_available_providers_info; print(get_available_providers_info())"
 ```
 
 #### 2. Enable NPU in Configuration
@@ -234,10 +234,20 @@ enabled = true       # Try NPU, fallback to CPU if unavailable
 ```
 
 #### 3. Hardware Requirements
-- **Intel Arc GPUs**: Intel Arc A-series with NPU support
-- **Intel CPUs**: 12th gen Core or newer with built-in NPU
-- **Dedicated NPU**: Intel Movidius or similar accelerators
-- **Drivers**: Latest Intel graphics drivers and OpenVINO runtime
+- **Qualcomm Snapdragon**: 8 Gen 2/3 or newer with NPU/HTP support
+- **ONNX Model**: WCR-format ONNX models (converted using WCR tools)
+- **Drivers**: Latest Qualcomm drivers and WinML execution providers
+- **Dependencies**: onnxruntime-genai, onnxruntime-winml, winui3
+
+#### 4. Model Preparation
+WCR NPU requires ONNX models in WCR format. Provide the path to your converted model:
+```bash
+# Run with WCR NPU and model path
+python run_edge.py --device npu --model-path /path/to/wcr/onnx/model
+
+# Run tests with WCR NPU
+python run_tests.py --device npu --model-path /path/to/wcr/onnx/model
+```
 
 ### Network Configuration
 1. Ensure both machines are on the same local network
@@ -259,7 +269,7 @@ python run_edge.py
 # Connect with specific device
 python run_edge.py --device cpu   # Force CPU inference
 python run_edge.py --device gpu   # Force GPU acceleration
-python run_edge.py --device npu   # Force NPU acceleration
+python run_edge.py --device npu --model-path /path/to/wcr/onnx/model   # Force WCR NPU acceleration
 
 # Connect to remote server with GPU
 python run_edge.py --host 192.168.1.100 --device gpu
@@ -279,7 +289,7 @@ python run_tests.py --num-prompts 3 --iterations 1
 # Test with specific device
 python run_tests.py --device cpu     # Force CPU testing
 python run_tests.py --device gpu     # Force GPU testing  
-python run_tests.py --device npu     # Force NPU testing
+python run_tests.py --device npu --model-path /path/to/wcr/onnx/model     # Force WCR NPU testing
 
 # Test with remote server and specific device
 python run_tests.py --host 192.168.1.100 --port 8765 --device gpu
@@ -298,6 +308,7 @@ python run_tests.py --device npu --num-prompts 3 --iterations 2
 - `--host HOST`: Cloud server host (default: localhost)
 - `--port PORT`: Cloud server port (default: 8765)
 - `--device DEVICE`: Edge device to use (cpu, gpu, npu). If not specified, uses config.toml setting
+- `--model-path PATH`: Path to ONNX model folder (required for NPU device)
 
 ### Device Testing Examples
 ```bash
@@ -306,7 +317,7 @@ python run_tests.py --device cpu --num-prompts 5 --iterations 2
 python run_tests.py --device gpu --num-prompts 5 --iterations 2
 
 # Test NPU acceleration
-python run_tests.py --device npu --num-prompts 3 --iterations 1
+python run_tests.py --device npu --model-path /path/to/wcr/onnx/model --num-prompts 3 --iterations 1
 
 # Remote server with GPU edge
 python run_tests.py --host 192.168.1.100 --device gpu

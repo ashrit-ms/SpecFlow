@@ -1,7 +1,7 @@
 """
 Edge component - Draft model implementation for speculative decoding
 Runs a small language model (<3B parameters) to generate draft tokens
-Supports both CPU and OpenVINO NPU acceleration
+Supports CPU, GPU, and WCR NPU acceleration (ONNX Runtime GenAI with WinML)
 """
 import torch
 import torch.nn.functional as F
@@ -11,14 +11,14 @@ import time
 import logging
 from common.protocol import PerformanceMetrics, CreateTimestamp
 
-# Try to import OpenVINO NPU support
+# Try to import WCR NPU support (ONNX Runtime GenAI with WinML)
 try:
-    from edge.openvino_model import OpenVINONPUModel, IsNPUAvailable
-    OPENVINO_AVAILABLE = True
+    from edge.wcr_npu_model import WCRNPUModel, IsWCRNPUAvailable
+    WCR_NPU_AVAILABLE = True
 except ImportError:
-    OPENVINO_AVAILABLE = False
-    OpenVINONPUModel = None
-    IsNPUAvailable = lambda: False
+    WCR_NPU_AVAILABLE = False
+    WCRNPUModel = None
+    IsWCRNPUAvailable = lambda: False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,16 +27,18 @@ g_logger = logging.getLogger(__name__)
 class EdgeDraftModel:
     """Draft model running on edge device with CPU, GPU, or NPU support"""
     
-    def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", device: str = "cpu"):
+    def __init__(self, model_name: str = "meta-llama/Llama-3.2-1B-Instruct", device: str = "cpu", model_path: str = None):
         """
         Initialize draft model with device selection
         
         Args:
             model_name: HuggingFace model name
             device: Device to use ("cpu", "gpu", or "npu")
+            model_path: Path to ONNX model folder (required for NPU device)
         """
         self.m_model_name = model_name
         self.m_device = device.lower()
+        self.m_model_path = model_path
         self.m_tokenizer = None
         self.m_model = None
         self.m_generation_config = None
@@ -45,6 +47,8 @@ class EdgeDraftModel:
         
         g_logger.info(f"Initializing edge draft model: {model_name}")
         g_logger.info(f"Target device: {self.m_device}")
+        if self.m_model_path:
+            g_logger.info(f"Model path: {self.m_model_path}")
         
         # Validate device selection
         if self.m_device == "gpu":
@@ -59,12 +63,16 @@ class EdgeDraftModel:
                 g_logger.info(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         
         elif self.m_device == "npu":
-            if not OPENVINO_AVAILABLE:
-                g_logger.error("NPU device requested but OpenVINO not available")
-                g_logger.info("Install OpenVINO with: pip install openvino openvino-dev optimum[openvino]")
-                raise RuntimeError("OpenVINO NPU support not available")
+            if not WCR_NPU_AVAILABLE:
+                g_logger.error("NPU device requested but WCR NPU support not available")
+                g_logger.info("Install WCR NPU support with: pip install onnxruntime-genai onnxruntime-winml winui3")
+                raise RuntimeError("WCR NPU support not available")
             
-            if not IsNPUAvailable():
+            if not self.m_model_path:
+                g_logger.error("NPU device requires model_path to ONNX model folder")
+                raise ValueError("model_path is required for NPU device")
+            
+            if not IsWCRNPUAvailable():
                 g_logger.error("NPU device requested but no NPU hardware detected")
                 g_logger.info("Falling back to CPU device")
                 self.m_device = "cpu"
@@ -88,27 +96,23 @@ class EdgeDraftModel:
             return False
     
     def _LoadNPUModel(self) -> bool:
-        """Load model for NPU inference using OpenVINO"""
-        g_logger.info("Loading model for NPU inference...")
+        """Load model for NPU inference using WCR ONNX Runtime GenAI"""
+        g_logger.info("Loading model for WCR NPU inference...")
         
-        # Create and load NPU model (OpenVINO wrapper handles model selection)
-        self.m_npu_model = OpenVINONPUModel(self.m_model_name)
+        # Create and load WCR NPU model
+        self.m_npu_model = WCRNPUModel(self.m_model_path)
         
         if not self.m_npu_model.LoadModel():
-            g_logger.error("Failed to load NPU model")
+            g_logger.error("Failed to load WCR NPU model")
             g_logger.info("NPU loading failed. Common causes:")
-            g_logger.info("1. NPU driver/hardware compatibility (update Intel drivers)")
-            g_logger.info("2. OpenVINO version compatibility")
-            g_logger.info("3. Model format issues (now using pre-converted model)")
-            g_logger.info("Recommended fallbacks:")
-            g_logger.info("  python run_tests.py --device cpu")
-            g_logger.info("  python run_tests.py --device gpu")
+            g_logger.info("1. NPU driver/hardware compatibility (update Qualcomm drivers)")
+            g_logger.info("2. ONNX Runtime GenAI version compatibility")
+            g_logger.info("3. WinML execution provider registration issues")
+            g_logger.info("4. Model format incompatibility (ensure WCR ONNX format)")
             return False
         
-        # Get tokenizer from NPU model
-        self.m_tokenizer = self.m_npu_model.m_tokenizer
-        
-        g_logger.info("NPU model loaded successfully")
+        g_logger.info("✓ WCR NPU model loaded successfully")
+        g_logger.info("Using ONNX Runtime GenAI with WinML execution providers")
         return True
     
     def _LoadGPUModel(self) -> bool:

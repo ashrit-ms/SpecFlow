@@ -48,6 +48,12 @@ def ParseArguments():
         choices=['cpu', 'gpu', 'npu'],
         help='Edge device to use for testing (cpu, gpu, npu). If not specified, uses config.toml setting'
     )
+    parser.add_argument(
+        '--model-path',
+        type=str,
+        default=None,
+        help='Path to ONNX model folder (required for --device npu)'
+    )
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -59,9 +65,29 @@ if __name__ == "__main__":
     print(f"Testing with {args.num_prompts} prompts, {args.iterations} iterations each")
     if args.device:
         print(f"Edge device override: {args.device}")
+        if args.model_path:
+            print(f"Model path: {args.model_path}")
     else:
         print("Edge device: using config.toml setting")
     print("")
+    
+    # Validate NPU requirements
+    if args.device == 'npu':
+        if not args.model_path:
+            g_logger.error("--model-path is required when using --device npu")
+            g_logger.error("Example: python run_tests.py --device npu --model-path /path/to/onnx/model")
+            sys.exit(1)
+        
+        try:
+            from edge.wcr_npu_model import ValidateWCRModelPath
+            if not ValidateWCRModelPath(args.model_path):
+                g_logger.error(f"Invalid WCR ONNX model path: {args.model_path}")
+                g_logger.error("Path must contain ONNX files and config.json")
+                sys.exit(1)
+        except ImportError:
+            g_logger.error("WCR NPU support not available")
+            g_logger.error("Install with: pip install -r requirements-edge-wcr-npu.txt")
+            sys.exit(1)
     
     try:
         asyncio.run(RunPerformanceTest(
@@ -69,7 +95,8 @@ if __name__ == "__main__":
             num_iterations=args.iterations,
             cloud_host=args.host,
             cloud_port=args.port,
-            edge_device=args.device
+            edge_device=args.device,
+            model_path=args.model_path
         ))
     except KeyboardInterrupt:
         g_logger.info("Performance test interrupted")

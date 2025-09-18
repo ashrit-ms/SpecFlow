@@ -2,6 +2,7 @@
 Configuration loader for SpecECD project
 """
 import toml
+import os
 from pathlib import Path
 from typing import Dict, Any
 
@@ -81,5 +82,44 @@ def get_network_config() -> Dict[str, Any]:
     config = load_config()
     return {
         "host": config["network"]["default_host"],
-        "port": config["network"]["default_port"]
+        "port": config["network"]["default_port"],
+        "ping_interval": config["network"].get("ping_interval", 300),
+        "ping_timeout": config["network"].get("ping_timeout", 300)
     }
+
+def get_performance_config() -> Dict[str, Any]:
+    """Get performance test configuration"""
+    config = load_config()
+    return {
+        "warmup_iterations": config["performance"].get("warmup_iterations", 2),
+        "test_iterations": config["performance"].get("test_iterations", 2),
+        "max_tokens_per_test": config["performance"].get("max_tokens_per_test", 50),
+        "temperature": config["performance"].get("temperature", 0.7),
+        "repetition_penalty": config["performance"].get("repetition_penalty", 1.1)
+    }
+
+def get_fast_model_config() -> Dict[str, Any]:
+    """Get fast model configuration for testing"""
+    config = load_config()
+    fast_config = config.get("models", {}).get("fast", {})
+    if not fast_config:
+        # Return None if no fast config exists
+        return None
+    
+    return {
+        "cloud_model": fast_config.get("cloud_model"),
+        "expected_inference_time": fast_config.get("expected_inference_time")
+    }
+
+def set_environment_variables():
+    """Set environment variables from configuration"""
+    config = load_config()
+    
+    # Set TORCH environment variables if specified
+    torch_cuda_dsa = config.get("TORCH_USE_CUDA_DSA")
+    if torch_cuda_dsa is not None:
+        os.environ["TORCH_USE_CUDA_DSA"] = str(torch_cuda_dsa)
+    
+    cuda_launch_blocking = config.get("CUDA_LAUNCH_BLOCKING")
+    if cuda_launch_blocking is not None:
+        os.environ["CUDA_LAUNCH_BLOCKING"] = str(cuda_launch_blocking)

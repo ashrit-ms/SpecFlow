@@ -13,7 +13,7 @@ from common.protocol import (
     SerializeMessage, DeserializeMessage, CreateTimestamp,
     CalculateAcceptanceRate
 )
-from common.config import get_cloud_model_config
+from common.config import get_cloud_model_config, get_network_config
 from cloud.target_model import CloudTargetModel
 
 # Configure logging
@@ -29,6 +29,13 @@ class CloudServer:
         
         cloud_config = get_cloud_model_config()
         self.m_target_model = CloudTargetModel(model_name=cloud_config["model_name"])
+        self.m_max_cloud_tokens = cloud_config.get("max_tokens", 10)
+        
+        # Get network configuration  
+        network_config = get_network_config()
+        self.m_ping_interval = network_config.get("ping_interval", 300)
+        self.m_ping_timeout = network_config.get("ping_timeout", 300)
+        
         self.m_connected_clients = set()
         
     async def Initialize(self) -> bool:
@@ -104,7 +111,7 @@ class CloudServer:
                     request.prompt,
                     request.draft_tokens,
                     request.draft_probabilities,  # Use the probabilities from draft model
-                    max_new_tokens=min(10, request.max_new_tokens)
+                    max_new_tokens=min(self.m_max_cloud_tokens, request.max_new_tokens)
                 )
                 g_logger.info(f"Used probabilistic verification with {len(request.draft_probabilities)} probabilities")
             else:
@@ -112,7 +119,7 @@ class CloudServer:
                 verified_tokens, new_tokens, accepted_count, inference_time = self.m_target_model.VerifyAndComplete(
                     request.prompt,
                     request.draft_tokens,
-                    max_new_tokens=min(10, request.max_new_tokens)
+                    max_new_tokens=min(self.m_max_cloud_tokens, request.max_new_tokens)
                 )
                 g_logger.warning("Using legacy string-based verification (no probabilities provided)")
             
@@ -188,8 +195,8 @@ class CloudServer:
                 self.HandleClient,
                 self.m_host,
                 self.m_port,
-                ping_interval=300,  # 5 minutes - match client settings
-                ping_timeout=300,   # 5 minutes - match client settings
+                ping_interval=self.m_ping_interval,
+                ping_timeout=self.m_ping_timeout,
                 close_timeout=60    # 1 minute close timeout
             )
             

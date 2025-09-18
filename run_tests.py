@@ -54,15 +54,38 @@ def ParseArguments():
         default=None,
         help='Path to ONNX model folder (required for --device npu)'
     )
+    parser.add_argument(
+        '--log-level',
+        type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        default='INFO',
+        help='Logging level (default: INFO). Use DEBUG for detailed debugging output'
+    )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose debug logging (equivalent to --log-level DEBUG)'
+    )
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = ParseArguments()
     
+    # Configure logging level based on arguments
+    log_level = logging.DEBUG if args.verbose else getattr(logging, args.log_level.upper())
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Also set the root logger level to ensure all modules use the same level
+    logging.getLogger().setLevel(log_level)
+    
     print("SpecECD Performance Test Suite")
     print("Testing speculative decoding with corrected implementation")
     print("Make sure cloud server is running before starting tests")
     print(f"Testing with {args.num_prompts} prompts, {args.iterations} iterations each")
+    print(f"Logging level: {args.log_level if not args.verbose else 'DEBUG (verbose)'}")
     if args.device:
         print(f"Edge device override: {args.device}")
         if args.model_path:

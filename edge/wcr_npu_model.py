@@ -22,7 +22,7 @@ except ImportError:
     og = None
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 g_logger = logging.getLogger(__name__)
 
 class WCRNPUModel:
@@ -190,77 +190,123 @@ class WCRNPUModel:
         try:
             g_logger.debug(f"WCR NPU generating {num_draft_tokens} tokens for: '{prompt[:50]}...'")
             
-            # Encode the prompt
-            input_tokens = self.m_tokenizer.encode(prompt)
-            
-            # Set up generation parameters
-            params = og.GeneratorParams(self.m_model)
-            params.set_search_options(
-                do_sample=True,
-                temperature=temperature,
-                top_p=0.9,
-                max_length=len(input_tokens) + num_draft_tokens
-            )
-            params.input_ids = input_tokens
-            
-            # Generate tokens using WCR NPU acceleration
-            generator = og.Generator(self.m_model, params)
-            
             draft_tokens = []
             draft_probs = []
+            current_prompt = prompt  # Start with original prompt
             
-            # Generate tokens one by one to track probabilities
+            # Import numpy at method level to avoid scope issues
+            import numpy as np
+            
+            # Generate tokens one by one, growing the prompt string (simpler approach)
             for i in range(num_draft_tokens):
-                if generator.is_done():
-                    break
+                g_logger.debug(f"Iteration {i+1}: generating token for prompt: '{current_prompt[-50:]}'")
                 
-                # Compute next token with NPU acceleration
-                generator.compute_logits()
-                
-                # Get logits (if available) for probability calculation
                 try:
+                    # Encode current prompt for this iteration
+                    input_tokens = self.m_tokenizer.encode(current_prompt)
+                    g_logger.debug(f"Input tokens: {input_tokens[:5] if len(input_tokens) > 5 else input_tokens} (length: {len(input_tokens)})")
+                    
+                    # Set up generation parameters
+                    params = og.GeneratorParams(self.m_model)
+                    search_options = {
+                        "max_length": 4096
+                    }
+                    params.set_search_options(
+                        **search_options
+                    )
+                    
+                    # Create generator
+                    generator = og.Generator(self.m_model, params)
+                    g_logger.debug("Generator created successfully")
+                    
+                    # Try append_tokens with error handling and fallbacks
+                    append_success = False
+                    
+                    # Try original type first
+                    try:
+                        generator.append_tokens(input_tokens)
+                        g_logger.debug("append_tokens succeeded with original type")
+                        append_success = True
+                    except Exception as e1:
+                        g_logger.debug(f"append_tokens failed with original type: {e1}")
+                        
+                        # Try converting to list if not already
+                        try:
+                            if not isinstance(input_tokens, list):
+                                input_tokens_list = list(input_tokens)
+                                generator.append_tokens(input_tokens_list)
+                                g_logger.debug("append_tokens succeeded with list conversion")
+                                append_success = True
+                            else:
+                                # If already list, try as numpy array
+                                input_tokens_array = np.array(input_tokens, dtype=np.int32)
+                                generator.append_tokens(input_tokens_array)
+                                g_logger.debug("append_tokens succeeded with numpy array")
+                                append_success = True
+                        except Exception as e2:
+                            g_logger.debug(f"append_tokens failed with list/array conversion: {e2}")
+                            
+                            # Try as single sequence
+                            try:
+                                for token in input_tokens:
+                                    generator.append_tokens([int(token)])
+                                g_logger.debug("append_tokens succeeded with individual tokens")
+                                append_success = True
+                            except Exception as e3:
+                                g_logger.error(f"All append_tokens methods failed: {e1}, {e2}, {e3}")
+                                g_logger.error(f"input_tokens type: {type(input_tokens)}")
+                                g_logger.error(f"input_tokens content: {input_tokens}")
+                                # Break out of token generation loop instead of crashing
+                                break
+                    
+                    if not append_success:
+                        g_logger.error("Failed to append tokens, stopping generation")
+                        break
+                    
+                    # Get logits for next token prediction
                     logits = generator.get_logits()
-                    if logits is not None and len(logits) > 0:
-                        # Convert to numpy and compute probabilities
-                        logits_array = np.array(logits, dtype=np.float32).flatten()
-                        
-                        # Apply temperature
-                        if temperature != 1.0:
-                            logits_array = logits_array / temperature
-                        
-                        # Compute softmax probabilities
-                        exp_logits = np.exp(logits_array - np.max(logits_array))
-                        probs = exp_logits / np.sum(exp_logits)
-                        
-                        # Get the selected token and its probability
-                        generator.generate_next_token()
-                        new_token_id = generator.get_next_tokens()[0]
-                        token_prob = float(probs[new_token_id]) if new_token_id < len(probs) else 0.7
-                    else:
-                        # Fallback: generate token without detailed probability
-                        generator.generate_next_token()
-                        new_token_id = generator.get_next_tokens()[0]
-                        token_prob = 0.7  # Placeholder probability
-                        
-                except Exception as prob_error:
-                    g_logger.debug(f"Probability calculation failed: {prob_error}")
-                    # Fallback: generate token without detailed probability
-                    generator.generate_next_token()
-                    new_token_id = generator.get_next_tokens()[0]
-                    token_prob = 0.7  # Placeholder probability
-                
-                # Decode token
-                token_text = self.m_tokenizer.decode([new_token_id])
-                draft_tokens.append(token_text)
-                draft_probs.append(token_prob)
-                
-                g_logger.debug(f"WCR NPU token {i+1}: '{token_text}' (p={token_prob:.3f})")
+                    
+                    if logits is None or len(logits) == 0:
+                        g_logger.debug(f"No logits at iteration {i}, stopping")
+                        break
+                    
+                    # Convert to numpy and apply temperature if needed
+                    logits_array = np.array(logits, dtype=np.float32).flatten()
+                    if temperature != 1.0:
+                        logits_array = logits_array / temperature
+                    
+                    # Compute probabilities (softmax)
+                    exp_logits = np.exp(logits_array - np.max(logits_array))
+                    probs = exp_logits / np.sum(exp_logits)
+                    
+                    # Select next token (greedy for now, could add sampling)
+                    next_token_id = int(np.argmax(logits_array))
+                    token_prob = float(probs[next_token_id])
+                    
+                    # Decode the token
+                    token_text = self.m_tokenizer.decode([next_token_id])
+                    draft_tokens.append(token_text)
+                    draft_probs.append(token_prob)
+                    
+                    g_logger.debug(f"Draft token {i+1}: '{token_text}' (p={token_prob:.3f})")
+                    
+                    # Update prompt for next iteration (autoregressive)
+                    current_prompt += token_text
+                    
+                except Exception as token_error:
+                    g_logger.error(f"Error generating token {i+1}: {token_error}")
+                    # Continue with partial results instead of crashing
+                    break
             
             inference_time = CreateTimestamp() - start_time
             
-            g_logger.info(f"WCR NPU generated {len(draft_tokens)} draft tokens in {inference_time:.3f}s")
+            # Safety check for empty results
+            if not draft_tokens:
+                g_logger.warning("No draft tokens generated - returning empty results")
+                return [], [], inference_time
+            
+            g_logger.debug(f"WCR NPU generated {len(draft_tokens)} draft tokens in {inference_time:.3f}s")
             g_logger.debug(f"Draft sequence: {''.join(draft_tokens)}")
-            g_logger.debug(f"Average probability: {sum(draft_probs)/len(draft_probs):.3f}")
             
             return draft_tokens, draft_probs, inference_time
             
@@ -283,18 +329,21 @@ class WCRNPUModel:
             # Set up generation parameters
             params = og.GeneratorParams(self.m_model)
             params.set_search_options(
-                do_sample=True,
-                temperature=0.8,
-                top_p=0.9,
                 max_length=len(input_tokens) + max_tokens
             )
-            params.input_ids = input_tokens
             
-            # Generate text with NPU acceleration
-            output_tokens = og.generate(self.m_model, params)
+            # Create generator and append tokens
+            generator = og.Generator(self.m_model, params)
+            generator.append_tokens(input_tokens)
             
-            # Decode the full output
-            output_text = self.m_tokenizer.decode(output_tokens[0])
+            # Generate tokens one by one until done
+            while not generator.is_done():
+                generator.compute_logits()
+                generator.generate_next_token()
+            
+            # Get the complete sequence
+            output_tokens = generator.get_sequence(0)
+            output_text = self.m_tokenizer.decode(output_tokens)
             
             # Extract only the generated part (remove prompt)
             generated_text = output_text[len(prompt):]

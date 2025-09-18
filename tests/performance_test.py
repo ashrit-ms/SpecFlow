@@ -20,7 +20,7 @@ from edge.client import EdgeClient
 from common.protocol import PerformanceMetrics, CreateTimestamp, BaselineRequest, BaselineResponse, SerializeMessage, DeserializeMessage
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 g_logger = logging.getLogger(__name__)
 
 @dataclass

@@ -35,10 +35,11 @@ class TestResult:
 class SpecECDTestSuite:
     """Test suite for evaluating SpecECD performance with corrected implementation"""
     
-    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765, edge_device: str = None):
+    def __init__(self, cloud_host: str = "localhost", cloud_port: int = 8765, edge_device: str = None, model_path: str = None):
         self.m_cloud_host = cloud_host
         self.m_cloud_port = cloud_port
         self.m_edge_device = edge_device  # Device override for testing
+        self.m_model_path = model_path  # Model path for NPU device
         self.m_test_prompts = self._CreateTestPrompts()
         self.m_results: List[TestResult] = []
         
@@ -84,7 +85,7 @@ class SpecECDTestSuite:
     async def _RunAsyncTestSuiteWithConnection(self, prompts: List[str], num_iterations: int):
         """Run the async version of the test suite and return the connection"""
         # Initialize edge client with device override if specified
-        edge_client = EdgeClient(self.m_cloud_host, self.m_cloud_port, self.m_edge_device)
+        edge_client = EdgeClient(self.m_cloud_host, self.m_cloud_port, self.m_edge_device, self.m_model_path)
         
         if not await edge_client.Initialize():
             g_logger.error("Failed to initialize edge client")
@@ -132,7 +133,7 @@ class SpecECDTestSuite:
     async def _RunAsyncTestSuite(self, prompts: List[str], num_iterations: int) -> Dict[str, Any]:
         """Run the async version of the test suite"""
         # Initialize edge client with device override if specified
-        edge_client = EdgeClient(self.m_cloud_host, self.m_cloud_port, self.m_edge_device)
+        edge_client = EdgeClient(self.m_cloud_host, self.m_cloud_port, self.m_edge_device, self.m_model_path)
         
         if not await edge_client.Initialize():
             g_logger.error("Failed to initialize edge client")
@@ -357,7 +358,7 @@ class SpecECDTestSuite:
 
 async def RunPerformanceTest(num_prompts: int = 5, num_iterations: int = 2, 
                            cloud_host: str = "localhost", cloud_port: int = 8765,
-                           edge_device: str = None):
+                           edge_device: str = None, model_path: str = None):
     """Main function to run performance tests with corrected implementation and baseline comparison"""
     g_logger.info("Starting SpecECD performance evaluation with corrected algorithm")
     
@@ -371,7 +372,7 @@ async def RunPerformanceTest(num_prompts: int = 5, num_iterations: int = 2,
     g_logger.info("PHASE 1: SPECULATIVE DECODING TEST")
     g_logger.info("=" * 60)
     
-    test_suite = SpecECDTestSuite(cloud_host, cloud_port, edge_device)
+    test_suite = SpecECDTestSuite(cloud_host, cloud_port, edge_device, model_path)
     speculative_results, shared_connection = await test_suite.RunTestSuiteWithConnection(num_prompts=num_prompts, num_iterations=num_iterations)
     
     # Run cloud-only baseline test using the same connection

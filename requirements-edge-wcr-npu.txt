@@ -1,0 +1,22 @@
+﻿# WCR NPU Requirements - ONNX Runtime GenAI with WinML execution providers
+# Based on Windows Compatible Runtime (WCR) implementation
+# Provides NPU acceleration on Qualcomm Snapdragon platforms
+
+# Core ONNX Runtime GenAI support
+onnxruntime-genai>=0.4.0
+
+# WinML execution provider support for NPU acceleration
+onnxruntime-winml>=1.16.0
+
+# WinUI3 for execution provider discovery and registration
+winui3>=1.0.0
+
+# Additional dependencies for WCR NPU functionality
+numpy>=1.21.0
+
+# Optional: Jupyter notebook support for testing
+ipykernel>=6.0.0
+
+# Development and testing tools
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

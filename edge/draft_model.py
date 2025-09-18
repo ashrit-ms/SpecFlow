@@ -136,10 +136,10 @@ class EdgeDraftModel:
         self.m_model = AutoModelForCausalLM.from_pretrained(
             self.m_model_name,
             torch_dtype=torch.float16,  # Use float16 for GPU memory efficiency
-            device_map="auto",  # Automatically distribute across available GPUs
+            device_map=self.m_cuda_device,  # Automatically distribute across available GPUs
             trust_remote_code=True,
             low_cpu_mem_usage=True
-        ).to(self.m_cuda_device)
+        )
         
         # Configure generation parameters optimized for GPU
         self.m_generation_config = GenerationConfig(

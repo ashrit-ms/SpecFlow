@@ -21,7 +21,7 @@ class SpeculativeRequest:
     prompt: str
     draft_tokens: List[str]
     draft_probabilities: Optional[List[float]] = None  # CRITICAL: Add probabilities for proper verification
-    max_new_tokens: int = 50
+    max_new_tokens: int = 1000  # Large default limit for natural generation
     temperature: float = 0.7
     request_id: str = ""
     timestamp: float = 0.0

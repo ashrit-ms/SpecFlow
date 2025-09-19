@@ -42,6 +42,9 @@ pytest>=7.0.0
 datasets>=2.12.0
 evaluate>=0.4.0
 
+# Demo and UI
+colorama>=0.4.6  # For colored terminal output in demo
+
 # OpenVINO NPU support
 openvino>=2024.0.0,<2024.5.0
 openvino-dev>=2024.0.0,<2024.5.0
